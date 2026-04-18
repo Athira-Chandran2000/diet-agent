@@ -2,7 +2,7 @@
 
 An intelligent, production-grade agentic AI system for personal diet management. Built with **LangGraph**, this application utilizes a multi-agent architecture to autonomously calculate nutritional targets, log meals via real-world APIs, generate dynamic meal plans, and provide data-driven dietary coaching.
 
-### 🌟 **[Live Demo: Try the AI Diet Coach Here](https://diet-agent-ar42fh9qzfqdyn5lq875jy.streamlit.app/)** ---
+### 🌟 **[Live Demo: Try the AI Diet Coach Here](https://diet-agent-ddnzfer3fbtgegapplewiex.streamlit.app/)** ---
 
 ## 🧠 Architecture Overview
 
