@@ -1,3 +1,5 @@
+# app.py
+import os
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -299,6 +301,9 @@ with tab4:
         with st.chat_message("assistant"):
             with st.spinner("🧠 Agents thinking..."):
                 try:
+                    # Pass the username safely to the backend thread context
+                    os.environ["CURRENT_USERNAME"] = st.session_state.username
+                    
                     # Keep last 6 messages as context
                     reply, intent, full_msgs = run_agent(
                         prompt, st.session_state.lc_history[-6:]
@@ -311,7 +316,6 @@ with tab4:
                     st.session_state.lc_history.append(HumanMessage(content=prompt))
                     st.session_state.lc_history.append(AIMessage(content=reply))
                     
-                    # THE FIX: Force the whole page to refresh so the charts update instantly!
                     st.rerun()
                     
                 except Exception as e:

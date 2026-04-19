@@ -1,4 +1,5 @@
-import streamlit as st
+# tools/nutrition_tools.py
+import os
 import requests
 import functools
 from langchain_core.tools import tool
@@ -39,8 +40,9 @@ def log_meal(meal_type: str, food_name: str, quantity_g: float,
     """Log a meal into the user's database. ALWAYS search_food_nutrition first."""
     session = get_session()
     try:
+        username = os.environ.get("CURRENT_USERNAME", "default")
         entry = MealLog(
-            username=st.session_state.username,
+            username=username,
             meal_type=meal_type, food_name=food_name, quantity_g=quantity_g,
             calories=calories, protein=protein, carbs=carbs, fat=fat,
             fiber=fiber, notes=notes
@@ -60,11 +62,12 @@ def get_daily_intake(days_ago: int = 0) -> dict:
     """Get the total nutritional intake for a specific day (0 = today)."""
     session = get_session()
     try:
+        username = os.environ.get("CURRENT_USERNAME", "default")
         target_date = datetime.utcnow().date() - timedelta(days=days_ago)
         start = datetime.combine(target_date, datetime.min.time())
         end = start + timedelta(days=1)
         meals = session.query(MealLog).filter(
-            MealLog.username == st.session_state.username,
+            MealLog.username == username,
             MealLog.date >= start, MealLog.date < end
         ).all()
         
@@ -85,13 +88,14 @@ def get_weekly_summary() -> dict:
     """Get daily nutritional totals for the last 7 days."""
     session = get_session()
     try:
+        username = os.environ.get("CURRENT_USERNAME", "default")
         summary = {}
         for d in range(7):
             target = datetime.utcnow().date() - timedelta(days=d)
             start = datetime.combine(target, datetime.min.time())
             end = start + timedelta(days=1)
             meals = session.query(MealLog).filter(
-                MealLog.username == st.session_state.username,
+                MealLog.username == username,
                 MealLog.date >= start, MealLog.date < end
             ).all()
             totals = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
@@ -111,9 +115,9 @@ def log_weight(weight_kg: float) -> str:
     """Log the user's current weight (kg) into the progress tracker."""
     session = get_session()
     try:
-        session.add(WeightLog(weight_kg=weight_kg, username=st.session_state.username))
-        # Also update the profile
-        profile = session.query(UserProfile).filter_by(name=st.session_state.username).first()
+        username = os.environ.get("CURRENT_USERNAME", "default")
+        session.add(WeightLog(weight_kg=weight_kg, username=username))
+        profile = session.query(UserProfile).filter_by(name=username).first()
         if profile:
             profile.weight_kg = weight_kg
         session.commit()

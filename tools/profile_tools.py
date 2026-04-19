@@ -1,4 +1,5 @@
-import streamlit as st
+# tools/profile_tools.py
+import os
 from langchain_core.tools import tool
 from database import get_session, UserProfile
 from config import ACTIVITY_MULTIPLIERS, GOAL_ADJUSTMENTS
@@ -24,13 +25,13 @@ def compute_targets(age: int, gender: str, height_cm: float, weight_kg: float, a
         "target_carbs": carbs
     }
 
-
 @tool
 def get_user_profile() -> dict:
     """Retrieve the user's profile and nutritional targets."""
     session = get_session()
     try:
-        p = session.query(UserProfile).filter_by(name=st.session_state.username).first()
+        username = os.environ.get("CURRENT_USERNAME", "default")
+        p = session.query(UserProfile).filter_by(name=username).first()
         if not p:
             return {"error": "No profile found. Please create one."}
         return {
@@ -47,7 +48,6 @@ def get_user_profile() -> dict:
     finally:
         session.close()
 
-
 @tool
 def update_user_profile(name: str, age: int, gender: str, height_cm: float, 
                         weight_kg: float, activity_level: str, goal: str, 
@@ -55,10 +55,11 @@ def update_user_profile(name: str, age: int, gender: str, height_cm: float,
     """Update or create the user profile. Calculates daily targets automatically."""
     session = get_session()
     try:
+        username = os.environ.get("CURRENT_USERNAME", "default")
         targets = compute_targets(age, gender, height_cm, weight_kg, activity_level, goal)
-        p = session.query(UserProfile).filter_by(name=st.session_state.username).first()
+        p = session.query(UserProfile).filter_by(name=username).first()
         if not p:
-            p = UserProfile(name=st.session_state.username)
+            p = UserProfile(name=username)
             session.add(p)
             
         p.age = age
