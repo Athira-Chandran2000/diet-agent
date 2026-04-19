@@ -8,7 +8,11 @@ load_dotenv()
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# Model Definitions
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 
 # --- Nutrition API Configuration ---
 USDA_API_KEY = os.getenv("USDA_API_KEY")
