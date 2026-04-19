@@ -1,10 +1,16 @@
 import os
 from dotenv import load_dotenv
 
-# Load local environment variables if testing on your computer
+# Load local environment variables if testing locally
 load_dotenv()
 
-# --- API Configuration ---
+# --- AI & LLM Configuration ---
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+# --- Nutrition API Configuration ---
 USDA_API_KEY = os.getenv("USDA_API_KEY")
 USDA_BASE_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
 
