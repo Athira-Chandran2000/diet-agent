@@ -34,13 +34,39 @@ def search_food_nutrition(food_query: str, quantity_g: float = 100.0) -> dict:
 
 
 @tool
-def log_meal(meal_type: str, food_name: str, quantity_g: float, 
-             calories: float, protein: float, carbs: float, fat: float, 
+def log_meal(food_name: str, meal_type: str = "snack", quantity_g: float = 100.0, 
+             calories: float = None, protein: float = None, carbs: float = None, fat: float = None, 
              fiber: float = 0.0, notes: str = "") -> str:
-    """Log a meal into the user's database. ALWAYS search_food_nutrition first."""
+    """Log a meal into the user's database. If you don't know the exact macros, ONLY provide food_name, meal_type, and quantity_g, and the system will automatically search the USDA database to calculate them."""
+    import os
+    import requests
+    from config import USDA_API_KEY, USDA_BASE_URL
+    
     session = get_session()
     try:
         username = os.environ.get("CURRENT_USERNAME", "default")
+
+        # If the AI didn't provide macros, fetch them automatically!
+        if calories is None or protein is None or carbs is None or fat is None:
+            url = f"{USDA_BASE_URL}?api_key={USDA_API_KEY}&query={food_name}&pageSize=1"
+            response = requests.get(url)
+            
+            if response.status_code == 200 and len(response.json().get("foods", [])) > 0:
+                food = response.json()["foods"][0]
+                nutrients = {n["nutrientName"]: n["value"] for n in food.get("foodNutrients", [])}
+                factor = quantity_g / 100.0
+                
+                # Auto-calculate macros
+                calories = round(nutrients.get("Energy", 0) * factor, 1)
+                protein = round(nutrients.get("Protein", 0) * factor, 1)
+                carbs = round(nutrients.get("Carbohydrate, by difference", 0) * factor, 1)
+                fat = round(nutrients.get("Total lipid (fat)", 0) * factor, 1)
+                fiber = round(nutrients.get("Fiber, total dietary", 0) * factor, 1)
+                food_name = food.get("description", food_name) # Use the official USDA name
+            else:
+                return f"Could not find USDA data for {food_name}. Please ask the user to specify calories manually."
+
+        # Save to database
         entry = MealLog(
             username=username,
             meal_type=meal_type, food_name=food_name, quantity_g=quantity_g,
@@ -49,7 +75,8 @@ def log_meal(meal_type: str, food_name: str, quantity_g: float,
         )
         session.add(entry)
         session.commit()
-        return f"Successfully logged {quantity_g}g of {food_name} for {meal_type}."
+        return f"Successfully logged {quantity_g}g of {food_name} ({calories} kcal) for {meal_type}."
+        
     except Exception as e:
         session.rollback()
         return f"Error logging meal: {str(e)}"
