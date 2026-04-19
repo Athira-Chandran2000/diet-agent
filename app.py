@@ -21,14 +21,32 @@ st.markdown("""
 .stChatMessage {border-radius:12px;}
 </style>""", unsafe_allow_html=True)
 
-# ---------- SIDEBAR: PROFILE ----------
+# ---------- SIDEBAR: PROFILE & LOGIN ----------
 with st.sidebar:
-    st.markdown("## 👤 Your Profile")
+    st.markdown("## 🔑 Login")
+    if "username" not in st.session_state:
+        st.session_state.username = None
+        
+    if not st.session_state.username:
+        user_input = st.text_input("Enter Username to start:")
+        if st.button("Login"):
+            if user_input:
+                st.session_state.username = user_input
+                st.rerun()
+        st.stop()
+        
+    st.success(f"Logged in as {st.session_state.username}")
+    if st.button("Logout"):
+        st.session_state.username = None
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("## 👤 Profile Details")
     session = get_session()
-    profile = session.query(UserProfile).first()
+    profile = session.query(UserProfile).filter_by(name=st.session_state.username).first()
 
     with st.expander("✏️ Edit Profile", expanded=(profile is None)):
-        name = st.text_input("Name", value=profile.name if profile else "")
+        name = st.text_input("Username", value=st.session_state.username, disabled=True)
         col1, col2 = st.columns(2)
         age = col1.number_input("Age", 10, 100, profile.age if profile else 25)
         gender = col2.selectbox("Gender", ["male", "female"],
@@ -53,9 +71,9 @@ with st.sidebar:
         if st.button("💾 Save Profile", use_container_width=True):
             targets = compute_targets(age, gender, height, weight, activity, goal)
             if not profile:
-                profile = UserProfile()
+                profile = UserProfile(name=st.session_state.username)
                 session.add(profile)
-            profile.name = name; profile.age = age; profile.gender = gender
+            profile.age = age; profile.gender = gender
             profile.height_cm = height; profile.weight_kg = weight
             profile.activity_level = activity; profile.goal = goal
             profile.dietary_restrictions = restrictions
@@ -71,6 +89,8 @@ with st.sidebar:
     if profile:
         st.markdown("### 🎯 Daily Targets")
         st.metric("Calories", f"{profile.target_calories} kcal")
+        
+        # Fixed Sidebar UI to prevent cutoff
         st.markdown(f"""
         **Daily Macros:**
         * 🥩 **Protein:** {profile.target_protein}g
@@ -81,7 +101,7 @@ with st.sidebar:
         st.markdown("### ⚖️ Quick Weight Log")
         new_w = st.number_input("Weight kg", 30.0, 300.0, profile.weight_kg, key="qw")
         if st.button("Log Weight"):
-            session.add(WeightLog(weight_kg=new_w))
+            session.add(WeightLog(weight_kg=new_w, username=st.session_state.username))
             profile.weight_kg = new_w
             session.commit()
             st.success(f"Logged {new_w} kg")
@@ -105,7 +125,10 @@ with tab1:
     session = get_session()
     today = datetime.utcnow().date()
     start = datetime.combine(today, datetime.min.time())
-    meals_today = session.query(MealLog).filter(MealLog.date >= start).all()
+    meals_today = session.query(MealLog).filter(
+        MealLog.username == st.session_state.username,
+        MealLog.date >= start
+    ).all()
 
     totals = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0, "fiber": 0}
     for m in meals_today:
@@ -184,7 +207,10 @@ with tab2:
         dt = datetime.utcnow().date() - timedelta(days=d)
         s = datetime.combine(dt, datetime.min.time())
         e = s + timedelta(days=1)
-        ms = session.query(MealLog).filter(MealLog.date >= s, MealLog.date < e).all()
+        ms = session.query(MealLog).filter(
+            MealLog.username == st.session_state.username,
+            MealLog.date >= s, MealLog.date < e
+        ).all()
         days.append({
             "date": dt.strftime("%a %m/%d"),
             "calories": sum(m.calories for m in ms),
@@ -210,7 +236,10 @@ with tab2:
     st.plotly_chart(fig2, use_container_width=True)
 
     # Weight chart
-    weights = session.query(WeightLog).order_by(WeightLog.date).all()
+    weights = session.query(WeightLog).filter(
+        WeightLog.username == st.session_state.username
+    ).order_by(WeightLog.date).all()
+    
     if weights:
         wdf = pd.DataFrame([{"date": w.date, "weight": w.weight_kg} for w in weights])
         wfig = px.line(wdf, x="date", y="weight", markers=True,
@@ -223,7 +252,10 @@ with tab2:
 with tab3:
     session = get_session()
     st.subheader("🍽️ Recent Meals")
-    recent = session.query(MealLog).order_by(MealLog.date.desc()).limit(50).all()
+    recent = session.query(MealLog).filter(
+        MealLog.username == st.session_state.username
+    ).order_by(MealLog.date.desc()).limit(50).all()
+    
     if recent:
         df = pd.DataFrame([{
             "Date": m.date.strftime("%Y-%m-%d %H:%M"),
@@ -235,8 +267,8 @@ with tab3:
         } for m in recent])
         st.dataframe(df, use_container_width=True, hide_index=True)
 
-        if st.button("🗑️ Clear All Logs (debug)"):
-            session.query(MealLog).delete()
+        if st.button("🗑️ Clear My Logs (debug)"):
+            session.query(MealLog).filter(MealLog.username == st.session_state.username).delete()
             session.commit()
             st.rerun()
     else:

@@ -1,101 +1,97 @@
+import streamlit as st
 import requests
+import functools
 from langchain_core.tools import tool
 from datetime import datetime, timedelta
 from database import get_session, MealLog, UserProfile, WeightLog
-from config import USDA_API_KEY
-import functools
-
+from config import USDA_API_KEY, USDA_BASE_URL
 
 @tool
 @functools.lru_cache(maxsize=100)
 def search_food_nutrition(food_query: str, quantity_g: float = 100.0) -> dict:
-    """Search the USDA FoodData Central for nutritional data of a food item.
-    Returns calories, protein, carbs, fat, fiber per given quantity in grams."""
-    try:
-        url = "https://api.nal.usda.gov/fdc/v1/foods/search"
-        params = {"query": food_query, "api_key": USDA_API_KEY, "pageSize": 1,
-                  "dataType": ["Foundation", "SR Legacy", "Survey (FNDDS)"]}
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        if not data.get("foods"):
-            return {"error": f"No food found for '{food_query}'"}
-
-        food = data["foods"][0]
-        nutrients = {n["nutrientName"]: n.get("value", 0) for n in food.get("foodNutrients", [])}
-        factor = quantity_g / 100.0
-        return {
-            "food_name": food.get("description", food_query),
-            "quantity_g": quantity_g,
-            "calories": round(nutrients.get("Energy", 0) * factor, 1),
-            "protein": round(nutrients.get("Protein", 0) * factor, 1),
-            "carbs": round(nutrients.get("Carbohydrate, by difference", 0) * factor, 1),
-            "fat": round(nutrients.get("Total lipid (fat)", 0) * factor, 1),
-            "fiber": round(nutrients.get("Fiber, total dietary", 0) * factor, 1),
-        }
-    except Exception as e:
-        return {"error": str(e)}
+    """Search USDA database for food nutrition. Use this BEFORE logging a meal."""
+    url = f"{USDA_BASE_URL}?api_key={USDA_API_KEY}&query={food_query}&pageSize=1"
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        data = response.json()
+        if "foods" in data and len(data["foods"]) > 0:
+            food = data["foods"][0]
+            nutrients = {n["nutrientName"]: n["value"] for n in food.get("foodNutrients", [])}
+            
+            factor = quantity_g / 100.0
+            return {
+                "food_name": food.get("description", food_query),
+                "quantity_g": quantity_g,
+                "calories": round(nutrients.get("Energy", 0) * factor, 1),
+                "protein": round(nutrients.get("Protein", 0) * factor, 1),
+                "carbs": round(nutrients.get("Carbohydrate, by difference", 0) * factor, 1),
+                "fat": round(nutrients.get("Total lipid (fat)", 0) * factor, 1),
+                "fiber": round(nutrients.get("Fiber, total dietary", 0) * factor, 1)
+            }
+    return {"error": f"Could not find exact data for {food_query}. Please estimate."}
 
 
 @tool
-def log_meal(meal_type: str, food_name: str, quantity_g: float,
-             calories: float, protein: float, carbs: float, fat: float,
-             fiber: float = 0, notes: str = "") -> str:
-    """Log a meal into the user's food diary. meal_type must be breakfast, lunch, dinner, or snack."""
+def log_meal(meal_type: str, food_name: str, quantity_g: float, 
+             calories: float, protein: float, carbs: float, fat: float, 
+             fiber: float = 0.0, notes: str = "") -> str:
+    """Log a meal into the user's database. ALWAYS search_food_nutrition first."""
     session = get_session()
     try:
         entry = MealLog(
+            username=st.session_state.username,
             meal_type=meal_type, food_name=food_name, quantity_g=quantity_g,
             calories=calories, protein=protein, carbs=carbs, fat=fat,
             fiber=fiber, notes=notes
         )
         session.add(entry)
         session.commit()
-        return f"✅ Logged {food_name} ({quantity_g}g, {calories} kcal) as {meal_type}."
+        return f"Successfully logged {quantity_g}g of {food_name} for {meal_type}."
+    except Exception as e:
+        session.rollback()
+        return f"Error logging meal: {str(e)}"
     finally:
         session.close()
 
 
 @tool
 def get_daily_intake(days_ago: int = 0) -> dict:
-    """Get aggregated nutritional intake for a specific day. days_ago=0 means today."""
+    """Get the total nutritional intake for a specific day (0 = today)."""
     session = get_session()
     try:
         target_date = datetime.utcnow().date() - timedelta(days=days_ago)
         start = datetime.combine(target_date, datetime.min.time())
         end = start + timedelta(days=1)
         meals = session.query(MealLog).filter(
+            MealLog.username == st.session_state.username,
             MealLog.date >= start, MealLog.date < end
         ).all()
-
-        totals = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0, "fiber": 0}
-        meal_list = []
+        
+        totals = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
         for m in meals:
             totals["calories"] += m.calories
             totals["protein"] += m.protein
             totals["carbs"] += m.carbs
             totals["fat"] += m.fat
-            totals["fiber"] += m.fiber
-            meal_list.append({
-                "meal_type": m.meal_type, "food": m.food_name,
-                "qty_g": m.quantity_g, "kcal": m.calories
-            })
-        return {"date": str(target_date), "totals": totals, "meals": meal_list}
+            
+        return {"date": str(target_date), "totals": totals, "meal_count": len(meals)}
     finally:
         session.close()
 
 
 @tool
 def get_weekly_summary() -> dict:
-    """Get a 7-day rolling summary of daily calories and macros."""
+    """Get daily nutritional totals for the last 7 days."""
     session = get_session()
     try:
-        summary = []
-        for d in range(6, -1, -1):
+        summary = {}
+        for d in range(7):
             target = datetime.utcnow().date() - timedelta(days=d)
             start = datetime.combine(target, datetime.min.time())
             end = start + timedelta(days=1)
             meals = session.query(MealLog).filter(
+                MealLog.username == st.session_state.username,
                 MealLog.date >= start, MealLog.date < end
             ).all()
             totals = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
@@ -104,8 +100,8 @@ def get_weekly_summary() -> dict:
                 totals["protein"] += m.protein
                 totals["carbs"] += m.carbs
                 totals["fat"] += m.fat
-            summary.append({"date": str(target), **totals})
-        return {"week": summary}
+            summary[str(target)] = totals
+        return summary
     finally:
         session.close()
 
@@ -115,12 +111,15 @@ def log_weight(weight_kg: float) -> str:
     """Log the user's current weight (kg) into the progress tracker."""
     session = get_session()
     try:
-        session.add(WeightLog(weight_kg=weight_kg))
+        session.add(WeightLog(weight_kg=weight_kg, username=st.session_state.username))
         # Also update the profile
-        profile = session.query(UserProfile).first()
+        profile = session.query(UserProfile).filter_by(name=st.session_state.username).first()
         if profile:
             profile.weight_kg = weight_kg
         session.commit()
-        return f"✅ Weight logged: {weight_kg} kg"
+        return f"Successfully logged weight: {weight_kg} kg."
+    except Exception as e:
+        session.rollback()
+        return f"Error logging weight: {str(e)}"
     finally:
         session.close()
