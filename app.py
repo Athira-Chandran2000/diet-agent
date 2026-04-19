@@ -305,10 +305,15 @@ with tab4:
                     )
                     st.caption(f"🧠 Routed to: **{intent}** agent")
                     st.markdown(reply)
+                    
+                    # Save the response to history
                     st.session_state.chat_history.append(("assistant", reply, intent))
-                    # Update lc_history
                     st.session_state.lc_history.append(HumanMessage(content=prompt))
                     st.session_state.lc_history.append(AIMessage(content=reply))
+                    
+                    # THE FIX: Force the whole page to refresh so the charts update instantly!
+                    st.rerun()
+                    
                 except Exception as e:
                     st.error(f"Agent error: {e}")
 
